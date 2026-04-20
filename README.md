@@ -1,1 +1,3 @@
 # Covid-Principal-Component-Analysis
+
+Program Overview:  The purpose of this program is to demonstrate how Principal Component Analysis is used to reduced high-dimensional data into a more comprehensive and interpretble form. The dataset in this analysis was obtained from Kaggle, and it contains survey results from a study on the COVID pandemic's effect on participant's psychological well being. By using principal component analysis on this data, we can learn more about the most important variables that contribute to the variability in the data, as well as creating principal components to be used in any further analysis, like visualizaiton or predictive modeling.
