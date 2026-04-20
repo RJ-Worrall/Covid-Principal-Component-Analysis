@@ -1,0 +1,278 @@
+---
+title: "PCA Demonstration"
+author: "RJ Worrall"
+date: "2026-04-15"
+output: 
+  prettydoc::html_pretty:
+    toc: true
+    theme: cayman
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(scales)
+library(ggplot2)
+library(psych)
+library(factoextra)
+library(corrplot)
+```
+
+## Data Overview
+https://www.kaggle.com/datasets/mathchi/covid19-and-character-strengths/data
+
+```{r}
+covid <- read.csv('covid.csv')
+dim(covid)
+```
+
+To demonstrate PCA, we will use a dataset tracking psychological responses to the COVID pandemic. This dataset has 944 respondents and 41 variables, perfect for PCA.
+
+## Data Cleaning
+
+To perform PCA, we need to make sure there are no categorical predictors in our dataset, as well as removing and NAs to make sure the analysis isn't skewed. Additionally, we need to include a correlation matrix to determine linearity of our data (are the predictors linearly correlated with each other).
+
+```{r}
+str(covid)
+covid_clean <- covid %>%
+  dplyr::select(where(is.numeric))|>
+  select(-Participant)
+sum(is.na(covid_clean))
+glimpse(covid_clean)
+
+cor_matrix <- cor(covid_clean, use = "complete.obs")
+
+corrplot::corrplot(cor_matrix, method = "color")
+```
+Most of the variables do have a correlation to each other, meaning that PCA is appropriate for this analysis due to the linearity assumption being confirmed.
+
+## Step 1: Standardization
+
+```{r}
+covid_standard <- scale(covid_clean)
+head(covid_standard)
+```
+
+## Step 2: Run preliminary PCA
+
+```{r}
+covid_pca <- prcomp(covid_standard, center = TRUE, scale. = TRUE)
+summary(covid_pca)
+```
+
+Our initial PCA calculates all 39 principal components, each adding to account for more and more of the data variance. However, the later principal components are simply capturing noise, meaning all 39 most likely are not necessary in the final model. It takes around 26 of the 39 principal components to account for 95% of the data variance. To find the true number of principal components, we will use a scree plot.
+
+## Step 3: Scree Plot
+
+```{r}
+variance <- covid_pca$sdev^2
+variance_explained <- variance / sum(variance)
+
+scree_data <- data.frame(
+  PC = 1:length(variance_explained),
+  Variance = variance_explained
+)
+
+# First 15 PCs
+scree_15 <- scree_data[1:15, ]
+
+# Total variance explained by first 15 PCs
+total_15 <- sum(scree_15$Variance)
+
+ggplot(scree_15, aes(x = PC, y = Variance)) +
+  geom_bar(stat = "identity") +
+  
+  # Line following tops of bars
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  
+  # Percent labels on bars
+  geom_text(
+    aes(label = percent(Variance, accuracy = 0.1)),
+    vjust = -0.4,
+    size = 3.5
+  ) +
+  
+  # Annotation in empty space
+  annotate(
+    "text",
+    x = 11,
+    y = max(scree_15$Variance) * 0.9,
+    label = paste0(
+      "First 15 PCs explain:\n",
+      percent(total_15, accuracy = 0.1), ' of the variance'
+    ),
+    hjust = 0,
+    size = 4
+  ) +
+  
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, max(scree_15$Variance) * 1.15)
+  ) +
+  
+  labs(
+    title = "Scree Plot (First 15 Principal Components)",
+    x = "Principal Component",
+    y = "Variance Explained"
+  ) +
+  
+  theme_minimal()
+```
+
+## Step 4: Extract Principal Components
+```{r}
+covid_scores <- covid_pca$x
+head(covid_scores)
+```
+
+## Step 5: Statistcal Mehods for Choosing Principal Components
+
+Kaiser Criteria selects principal components based on if their eigenvalues are greater than 1, indicating significance/more variance accounted for than any subsequent components.
+
+```{r}
+# Kaiser Criteria
+eigenvalues <- covid_pca$sdev^2
+
+which(eigenvalues > 1)
+
+# First 19 PCs
+scree_15 <- scree_data[1:9, ]
+
+# Total variance explained by first 9 PCs
+total_15 <- sum(scree_15$Variance)
+
+ggplot(scree_15, aes(x = PC, y = Variance)) +
+  geom_bar(stat = "identity") +
+  
+  # Line following tops of bars
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  
+  # Percent labels on bars
+  geom_text(
+    aes(label = percent(Variance, accuracy = 0.1)),
+    vjust = -0.4,
+    size = 3.5
+  ) +
+  
+  # Annotation in empty space
+  annotate(
+    "text",
+    x = 6,
+    y = max(scree_15$Variance) * 0.9,
+    label = paste0(
+      "First 9 PCs explain:\n",
+      percent(total_15, accuracy = 0.1), ' of the variance'
+    ),
+    hjust = 0,
+    size = 4
+  ) +
+  
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, max(scree_15$Variance) * 1.15)
+  ) +
+  
+  labs(
+    title = "Scree Plot (First 9 Principal Components)",
+    x = "Principal Component",
+    y = "Variance Explained"
+  ) +
+  
+  theme_minimal()
+```
+
+Parallel analysis is widely considered as one of the best methods to find the optimal number of PCS, which it does by generating random datasets of the same dimensions, and keeps the principal components if their eigenvalues are higher than the eigenvalues of the randomly generated datasets, which is done in order to avoid over-retention of principal components. 
+
+```{r}
+# Parallel Analysis
+fa.parallel(covid_standard, fa = "pc", n.iter = 100)
+```
+
+Parallel analysis selects only 5 principal components. The interpretation of these results is that the first 5 principal components are capturing the majority of the real structure of the data, whereas PC6 onwards mostly captures noise.
+
+## Step 6: Choosing Optimal Number of PCS
+
+```{r}
+cat('Kaiser Criteria Optimal Number of Components:',sum(eigenvalues > 1))
+cat('\nParallel Analysis Optimal Number of Components: 5')
+cat('\nScree Plot Optimal Number of Components: 6')
+```
+Our choice for the optimal number of components is different for each model, so how do we pick the right one? Among experts, Parallel Analysis is the most trusted method for picking the optimal number of components, with the Kaiser criteria following behind it. Because the results from our Scree plot earlier are very close to the results of the Parallel Analysis, we choose 6 as our optimal number of components, as 5 might be a bit too few based on the scree plot from the parallel analysis.
+
+## Step 7: Exploring Chosen Components
+
+Now that we have identified our optimal number of principal components, we can explore what exactly are the most important features of the dataset.
+
+```{r}
+covid_reduced <- covid_scores[,1:6]
+loadings_6 <- covid_pca$rotation[, 1:6]
+
+# Function to extract top 10 variables per PC
+top_6 <- lapply(1:6, function(i) {
+  vals <- loadings_6[order(abs(loadings_6[, i]), decreasing = TRUE)[1:10], i]
+  data.frame(
+    PC = paste0("PC", i),
+    Variable = names(vals),
+    Coefficient = vals
+  )
+})
+
+top_6_table <- do.call(rbind, top_6)
+
+top_6_table
+```
+
+Now that we have mapped out each principal component and the weights of the variables within them, lets look a bit deeper into PC1 and PC2 to determine their significance in the context of the data.
+
+```{r}
+pc1_vals <- loadings_6[order(abs(loadings_6[,1]), decreasing = TRUE)[1:10], 1]
+
+pc1_table <- data.frame(
+  Variable = names(pc1_vals),
+  Coefficient = pc1_vals
+)
+
+pc1_table
+```
+
+Looking at the data, we notice that the top 10 variables in the first principal component are all positive psychological and social traits. This tells us, that because this was chosen as the first principal component, that the largest variation in the data comes from the positive traits, meaning there is a lot of variation in positive psychological functioning among respondents during the COVID period. To increase the interpretability of our data, we can label PC1 as Positive Well-Being.
+
+```{r}
+pc2_vals <- loadings_6[order(abs(loadings_6[,2]), decreasing = TRUE)[1:10], 2]
+
+pc2_table <- data.frame(
+  Variable = names(pc2_vals),
+  Coefficient = pc2_vals
+)
+
+pc2_table
+```
+
+As opposed to the positivity of PC1, the second principal component captures much more negative feelings as the most significant variables. This makes sense in context, as PC2 is orthogonal, or uncorrelated with PC1, capturing a whole new part of the data. Because it wasn't chosen as PC1, PC2 isn't the primary source of variation in the data, and thus forms a secondary but distinct dimension of variation. We can label this component as Mental Health Strain for interpretability.
+
+So, what does this tell us about our data? While the 2 components capture very different information, it is important to understand that they aren't complete opposites. A person could be high in some of the positive categories, but still have anxiety about the pandemic. This is why PCA is so helpful, is because it combines these correlated positive and negative variables respectively together in their own smaller dimensions, so we can clearly visualize and understand the trends between them!
+
+
+## Step 8: Visualization
+
+Now that our principal components are chosen and interpreted, we can use the reduced data for modeling, visualization, and a variety of other tasks.
+
+```{r}
+pc_plot_data <- as.data.frame(covid_scores[, 1:2])
+
+colnames(pc_plot_data) <- c("PC1_Positive_WellBeing", 
+                            "PC2_Mental_Health_Strain")
+
+ggplot(pc_plot_data, aes(x = PC1_Positive_WellBeing, 
+                         y = PC2_Mental_Health_Strain)) +
+  geom_point(alpha = 0.6) +
+  labs(
+    title = "Principal Component Analysis: PC1 vs PC2",
+    x = "PC1: Positive Well-Being",
+    y = "PC2: Mental Health Strain"
+  ) +
+  theme_minimal()
+```
